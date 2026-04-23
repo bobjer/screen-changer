@@ -6,7 +6,6 @@ RELEASE_ZIP := $(BUILD_DIR)/$(APP_NAME)-$(VERSION).zip
 CONTENTS := $(APP)/Contents
 MACOS := $(CONTENTS)/MacOS
 RESOURCES := $(CONTENTS)/Resources
-ARCH := $(shell uname -m)
 MODULE_CACHE := /tmp/screen-changer-module-cache
 
 .PHONY: all clean dist run
@@ -22,7 +21,7 @@ $(APP): Sources/ScreenChanger/main.swift Resources/Info.plist Resources/ScreenCh
 	xcrun swiftc \
 		-swift-version 5 \
 		-module-cache-path "$(MODULE_CACHE)" \
-		-target $(ARCH)-apple-macosx13.0 \
+		-target arm64-apple-macosx26.0 \
 		-framework AppKit \
 		-framework CoreGraphics \
 		-framework ServiceManagement \
