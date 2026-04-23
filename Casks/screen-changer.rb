@@ -1,6 +1,6 @@
 cask "screen-changer" do
   version "0.1.0"
-  sha256 "05bced91c94f61fc794384aded45612bc1a3d9799955dd6cb5ffd92b6b90e723"
+  sha256 "92326a160c9f9bcd59b46d3c9cd9efa0e1be3d1fe2a24760384037655d167051"
 
   url "https://github.com/bobjer/screen-changer/releases/download/v#{version}/ScreenChanger-#{version}.zip"
   name "ScreenChanger"

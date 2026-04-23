@@ -5,6 +5,7 @@ VERSION := 0.1.0
 RELEASE_ZIP := $(BUILD_DIR)/$(APP_NAME)-$(VERSION).zip
 CONTENTS := $(APP)/Contents
 MACOS := $(CONTENTS)/MacOS
+RESOURCES := $(CONTENTS)/Resources
 ARCH := $(shell uname -m)
 MODULE_CACHE := /tmp/screen-changer-module-cache
 
@@ -12,10 +13,12 @@ MODULE_CACHE := /tmp/screen-changer-module-cache
 
 all: $(APP)
 
-$(APP): Sources/ScreenChanger/main.swift Resources/Info.plist
+$(APP): Sources/ScreenChanger/main.swift Resources/Info.plist Resources/ScreenChanger.icns
 	rm -rf "$(APP)"
 	mkdir -p "$(MACOS)"
+	mkdir -p "$(RESOURCES)"
 	cp Resources/Info.plist "$(CONTENTS)/Info.plist"
+	cp Resources/ScreenChanger.icns "$(RESOURCES)/ScreenChanger.icns"
 	xcrun swiftc \
 		-swift-version 5 \
 		-module-cache-path "$(MODULE_CACHE)" \

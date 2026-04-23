@@ -6,6 +6,8 @@
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>ScreenChanger</string>
+    <key>CFBundleIconFile</key>
+    <string>ScreenChanger</string>
     <key>CFBundleIdentifier</key>
     <string>com.damon.screenchanger</string>
     <key>CFBundleInfoDictionaryVersion</key>
