@@ -10,4 +10,11 @@ cask "screen-changer" do
   depends_on macos: ">= :ventura"
 
   app "ScreenChanger.app"
+
+  # Remove Gatekeeper quarantine — app is ad-hoc signed (no Apple Developer ID)
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-r", "-d", "com.apple.quarantine", "#{appdir}/ScreenChanger.app"],
+                   sudo: false
+  end
 end
