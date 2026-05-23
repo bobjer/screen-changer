@@ -1,6 +1,6 @@
 cask "screen-changer" do
   version "0.1.0"
-  sha256 "7b9cbbb665a3d48991465fcffedb6da1f70ed6d01440d3320e969a3b2c4bdb85"
+  sha256 "91cf718ad5f81984f1f7430620145087822b8e38df90063add4701e38ffbe7e8"
 
   url "https://github.com/bobjer/screen-changer/releases/download/v#{version}/ScreenChanger-#{version}.zip"
   name "ScreenChanger"
@@ -8,7 +8,7 @@ cask "screen-changer" do
   homepage "https://github.com/bobjer/screen-changer"
 
   depends_on arch: :arm64
-  depends_on macos: ">= :tahoe"
+  depends_on macos: :tahoe
 
   app "ScreenChanger.app"
 

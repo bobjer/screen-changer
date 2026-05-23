@@ -2,8 +2,6 @@ import AppKit
 import CoreGraphics
 import ServiceManagement
 
-private let nativeDisplayModeFlag: UInt32 = 0x02000000
-
 private enum ScreenChangerError: Error, LocalizedError {
     case noExternalDisplay
     case beginConfiguration(CGError)
@@ -25,26 +23,8 @@ private enum ScreenChangerError: Error, LocalizedError {
 }
 
 private final class DisplaySwitcher {
-    private let savedModesKey = "SavedDisplayModeIDs"
-    private var savedModeIDs: [String: Int]
-
-    init() {
-        savedModeIDs = UserDefaults.standard.dictionary(forKey: savedModesKey) as? [String: Int] ?? [:]
-        refreshSavedModes()
-    }
-
     var isReady: Bool {
         displayPair() != nil
-    }
-
-    func refreshSavedModes() {
-        for display in onlineDisplays() {
-            guard CGDisplayIsOnline(display) != 0 else { continue }
-            guard CGDisplayMirrorsDisplay(display) == kCGNullDirectDisplay else { continue }
-            guard let mode = CGDisplayCopyDisplayMode(display) else { continue }
-            savedModeIDs[displayKey(display)] = Int(mode.ioDisplayModeID)
-        }
-        UserDefaults.standard.set(savedModeIDs, forKey: savedModesKey)
     }
 
     func toggleMirrorMaster() throws {
@@ -52,14 +32,11 @@ private final class DisplaySwitcher {
             throw ScreenChangerError.noExternalDisplay
         }
 
-        refreshSavedModes()
-
         let currentMaster = mirrorMaster(for: pair)
         let nextMaster = currentMaster == pair.external ? pair.builtIn : pair.external
         let nextMirror = nextMaster == pair.external ? pair.builtIn : pair.external
 
         try applyMirror(master: nextMaster, mirror: nextMirror)
-        refreshSavedModes()
     }
 
     private func applyMirror(master: CGDirectDisplayID, mirror: CGDirectDisplayID) throws {
@@ -79,15 +56,10 @@ private final class DisplaySwitcher {
         do {
             try checked("unmirror master", CGConfigureDisplayMirrorOfDisplay(config, master, kCGNullDirectDisplay))
             try checked("unmirror mirror", CGConfigureDisplayMirrorOfDisplay(config, mirror, kCGNullDirectDisplay))
-
-            if let mode = preferredMode(for: master) {
-                try checked("set master mode", CGConfigureDisplayWithDisplayMode(config, master, mode, nil))
-            }
-
             try checked("set master origin", CGConfigureDisplayOrigin(config, master, 0, 0))
             try checked("set mirror", CGConfigureDisplayMirrorOfDisplay(config, mirror, master))
 
-            let completeError = CGCompleteDisplayConfiguration(config, .permanently)
+            let completeError = CGCompleteDisplayConfiguration(config, .forSession)
             guard completeError == .success else {
                 throw ScreenChangerError.completeConfiguration(completeError)
             }
@@ -140,51 +112,6 @@ private final class DisplaySwitcher {
         return (builtIn, external)
     }
 
-    private func preferredMode(for display: CGDirectDisplayID) -> CGDisplayMode? {
-        if CGDisplayMirrorsDisplay(display) == kCGNullDirectDisplay,
-           let currentMode = CGDisplayCopyDisplayMode(display),
-           currentMode.isUsableForDesktopGUI() {
-            return currentMode
-        }
-
-        let modes = allModes(for: display)
-
-        if let savedModeID = savedModeIDs[displayKey(display)],
-           let savedMode = modes.first(where: { Int($0.ioDisplayModeID) == savedModeID && $0.isUsableForDesktopGUI() }) {
-            return savedMode
-        }
-
-        let nativeModes = modes.filter {
-            $0.isUsableForDesktopGUI() && ($0.ioFlags & nativeDisplayModeFlag) != 0
-        }
-
-        if let nativeMode = nativeModes.max(by: modeSort) {
-            return nativeMode
-        }
-
-        if let currentMode = CGDisplayCopyDisplayMode(display),
-           currentMode.isUsableForDesktopGUI() {
-            return currentMode
-        }
-
-        return modes.filter { $0.isUsableForDesktopGUI() }.max(by: modeSort)
-    }
-
-    private func allModes(for display: CGDirectDisplayID) -> [CGDisplayMode] {
-        let options = [kCGDisplayShowDuplicateLowResolutionModes as String: true] as CFDictionary
-        return (CGDisplayCopyAllDisplayModes(display, options) as? [CGDisplayMode]) ?? []
-    }
-
-    private func modeSort(_ left: CGDisplayMode, _ right: CGDisplayMode) -> Bool {
-        let leftArea = left.pixelWidth * left.pixelHeight
-        let rightArea = right.pixelWidth * right.pixelHeight
-        if leftArea != rightArea {
-            return leftArea < rightArea
-        }
-
-        return left.refreshRate < right.refreshRate
-    }
-
     private func onlineDisplays() -> [CGDirectDisplayID] {
         var count: UInt32 = 0
         guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else {
@@ -199,11 +126,6 @@ private final class DisplaySwitcher {
         return Array(displays.prefix(Int(count)))
     }
 
-    private func displayKey(_ display: CGDirectDisplayID) -> String {
-        let builtIn = CGDisplayIsBuiltin(display) != 0 ? "builtin" : "external"
-        return "\(builtIn)-\(CGDisplayVendorNumber(display))-\(CGDisplayModelNumber(display))-\(CGDisplaySerialNumber(display))"
-    }
-
     private func displayArea(_ display: CGDirectDisplayID) -> Int {
         Int(CGDisplayPixelsWide(display) * CGDisplayPixelsHigh(display))
     }
@@ -215,6 +137,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let menu = NSMenu()
     private var launchAtLoginItem: NSMenuItem!
     private var pendingDisplayRefresh: DispatchWorkItem?
+    private var isSwitching = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ProcessInfo.processInfo.disableSuddenTermination()
@@ -280,19 +203,28 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        guard !isSwitching else {
+            NSSound.beep()
+            return
+        }
+
         guard switcher.isReady else {
             NSSound.beep()
             updateStatusItem()
             return
         }
 
+        isSwitching = true
+        updateStatusItem()
+
         do {
             try switcher.toggleMirrorMaster()
         } catch {
+            isSwitching = false
             showError("Could Not Switch Displays", text: error.localizedDescription)
         }
 
-        scheduleStatusUpdate()
+        scheduleStatusUpdate(after: 2.5)
     }
 
     @objc private func toggleLaunchAtLogin(_ sender: Any?) {
@@ -323,27 +255,31 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateStatusItem() {
-        switcher.refreshSavedModes()
         statusItem.isVisible = true
         guard let button = statusItem.button else { return }
 
         let ready = switcher.isReady
-        button.alphaValue = ready ? 1.0 : 0.65
+        button.alphaValue = ready && !isSwitching ? 1.0 : 0.65
         button.title = "🖥"
-        button.toolTip = ready
-            ? "Screen Changer"
-            : "Screen Changer: external display is not connected"
+        if isSwitching {
+            button.toolTip = "Screen Changer: switching displays"
+        } else {
+            button.toolTip = ready
+                ? "Screen Changer"
+                : "Screen Changer: external display is not connected"
+        }
     }
 
-    private func scheduleStatusUpdate() {
+    private func scheduleStatusUpdate(after delay: TimeInterval = 0.4) {
         pendingDisplayRefresh?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in
+            self?.isSwitching = false
             self?.updateStatusItem()
         }
 
         pendingDisplayRefresh = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     private func updateLaunchAtLoginState() {
@@ -367,7 +303,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     fileprivate func displayConfigurationChanged(flags: CGDisplayChangeSummaryFlags) {
         guard !flags.contains(.beginConfigurationFlag) else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.scheduleStatusUpdate()
+            guard let self else { return }
+            self.scheduleStatusUpdate(after: self.isSwitching ? 2.5 : 0.4)
         }
     }
 }
